@@ -8,3 +8,9 @@ dependencies = [
     "polars>=1.24.0",
     "psychrolib>=2.5.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "pandas>=2.2.3",
+]
