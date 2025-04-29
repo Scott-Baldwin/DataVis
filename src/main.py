@@ -17,9 +17,9 @@ def read_file(path="data/nyc-tmy-2023.csv"):
 
     # convert units in tmy data file to units used in psychrolib functions
     df = df.with_columns(
-        # convert humidity to decimal (0-1) from percent (1-100)
+        # convert humidity as percent (0-100) to decimal (0-1)
         pl.col("Relative Humidity").mul(0.01).alias("Relative Humidity"),
-        # convert mbar to pa
+        # convert pressure as millibar (mbar) to pascals (pa)
         pl.col("Pressure").mul(100).alias("Pressure"),
     )
     return df
