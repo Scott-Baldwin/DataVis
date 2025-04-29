@@ -2,34 +2,63 @@
 import polars as pl
 import psychrolib
 
+# set unit system
 psychrolib.SetUnitSystem(psychrolib.SI)
-file_path = "data/nyc-tmy-2023.csv"
 
 
-# get info from top 2 rows of headers
-info = pl.read_csv(file_path, n_rows=2).to_dicts()[0]
+def read_file(path="data/nyc-tmy-2023.csv"):
+    # get data
+    df = pl.read_csv(path, skip_rows=2)
 
-# get data
-df = pl.read_csv(file_path, skip_rows=2)
-
-
-def calc_wet_bulb(t_dry: float, percent_hum: float, pres_mbar: int) -> float:
-    # convert units from tmy data units to psychrolib units
     # TODO: check data file info for correct units
-    rel_hum = percent_hum / 100
-    press_pa = pres_mbar * 100
-    return psychrolib.GetTWetBulbFromRelHum(t_dry, rel_hum, press_pa)
+    # get info from top 2 rows of headers
+    # info = pl.read_csv(path, n_rows=2).to_dicts()[0]
+    # print(info)
 
-
-out = df.with_columns(
-    pl.struct("Temperature", "Relative Humidity", "Pressure")
-    .map_elements(
-        lambda x: calc_wet_bulb(
-            x["Temperature"], x["Relative Humidity"], x["Pressure"]
-        ),
-        return_dtype=pl.Float64,
+    # convert units in tmy data file to units used in psychrolib functions
+    df = df.with_columns(
+        # convert humidity to decimal (0-1) from percent (1-100)
+        pl.col("Relative Humidity").mul(0.01).alias("Relative Humidity"),
+        # convert mbar to pa
+        pl.col("Pressure").mul(100).alias("Pressure"),
     )
-    .alias("Wet Bulb")
-)
+    return df
 
-print(out.select(pl.all()).filter(pl.col("Wet Bulb") > 22))
+
+def calc_wet_bulb(row) -> float:
+    return psychrolib.GetTWetBulbFromRelHum(
+        row["Temperature"], row["Relative Humidity"], row["Pressure"]
+    )
+
+
+def calc_enthalpy(row) -> float:
+    return psychrolib.GetMoistAirEnthalpy(
+        row["Temperature"],
+        psychrolib.GetHumRatioFromRelHum(
+            row["Temperature"], row["Relative Humidity"], row["Pressure"]
+        ),
+    )
+
+
+def main():
+    df = read_file()
+    df = df.with_columns(
+        pl.struct("Temperature", "Relative Humidity", "Pressure")
+        .map_elements(calc_wet_bulb, return_dtype=pl.Float64)
+        .alias("Wet Bulb")
+    )
+
+    df = df.with_columns(
+        pl.struct("Temperature", "Relative Humidity", "Pressure")
+        .map_elements(calc_enthalpy, return_dtype=pl.Float64)
+        .alias("Enthalpy")
+    )
+
+    # print(out.select(pl.all()).filter(pl.col("Wet Bulb") > 22))
+    # print(df.select(pl.col("Wet Bulb").quantile(0.99)))
+    print(df)
+
+
+# %%
+if __name__ == "__main__":
+    main()
