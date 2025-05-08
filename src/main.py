@@ -1,4 +1,13 @@
-# not used yet, jst in place to check that libraries are installed
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "polars",
+#   "psychrolib",
+# ]
+# ///
+
+import os
+
 import polars as pl
 import psychrolib
 
@@ -6,7 +15,7 @@ import psychrolib
 psychrolib.SetUnitSystem(psychrolib.SI)
 
 
-def read_file(path="data/nyc-tmy-2023.csv"):
+def read_file(path):
     # get data
     df = pl.read_csv(path, skip_rows=2)
 
@@ -41,7 +50,13 @@ def calc_enthalpy(row: dict) -> float:
 
 
 def main():
-    df = read_file()
+    # path to data file
+    path = os.path.join(
+        os.path.dirname(__file__),
+        "data",
+        "nyc-tmy-2023.csv",
+    )
+    df = read_file(path)
     df = df.with_columns(
         pl.struct("Temperature", "Relative Humidity", "Pressure")
         .map_elements(calc_wet_bulb, return_dtype=pl.Float64)
