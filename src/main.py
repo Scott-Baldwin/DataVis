@@ -25,13 +25,13 @@ def read_file(path="data/nyc-tmy-2023.csv"):
     return df
 
 
-def calc_wet_bulb(row) -> float:
+def calc_wet_bulb(row: dict) -> float:
     return psychrolib.GetTWetBulbFromRelHum(
         row["Temperature"], row["Relative Humidity"], row["Pressure"]
     )
 
 
-def calc_enthalpy(row) -> float:
+def calc_enthalpy(row: dict) -> float:
     return psychrolib.GetMoistAirEnthalpy(
         row["Temperature"],
         psychrolib.GetHumRatioFromRelHum(
