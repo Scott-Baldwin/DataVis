@@ -1,13 +1,15 @@
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.12"
 # dependencies = [
 #   "polars",
 #   "psychrolib",
 # ]
 # ///
 
+# standard lib
 import os
 
+# 3rd party lib
 import polars as pl
 import psychrolib
 
@@ -15,23 +17,38 @@ import psychrolib
 psychrolib.SetUnitSystem(psychrolib.SI)
 
 
-def read_file(path):
+def read_file(path: str) -> tuple[pl.DataFrame, dict]:
+    # get info from top 2 rows of headers
+    info = pl.read_csv(path, n_rows=2).to_dicts()[0]
     # get data
     df = pl.read_csv(path, skip_rows=2)
 
-    # TODO: check data file info for correct units
-    # get info from top 2 rows of headers
-    # info = pl.read_csv(path, n_rows=2).to_dicts()[0]
-    # print(info)
+    # check & convert pressures to pascals (Pa)
+    pressure_unit = info["Pressure Units"]
+    # default tmy units in mbar
+    if pressure_unit == "mbar":
+        # multiply by 100 to get Pa
+        df = df.with_columns(pl.col("Pressure").mul(100).alias("Pressure"))
+        info["Pressure Units"] = "Pa"
+    # break for unhandled unit
+    elif pressure_unit != "Pa":
+        raise ValueError(f"Unexpected Pressure Units: {pressure_unit}")
 
-    # convert units in tmy data file to units used in psychrolib functions
-    df = df.with_columns(
-        # convert humidity as percent (0-100) to decimal (0-1)
-        pl.col("Relative Humidity").mul(0.01).alias("Relative Humidity"),
-        # convert pressure as millibar (mbar) to pascals (pa)
-        pl.col("Pressure").mul(100).alias("Pressure"),
-    )
-    return df
+    # check & convert relative humidity
+    humidity_unit = info["Relative Humidity Units"]
+    if humidity_unit == "%":
+        # convert from percent (0-100) to decimal (0-1)
+        df = df.with_columns(
+            pl.col("Relative Humidity").mul(0.01).alias("Relative Humidity")
+        )
+        info["Relative Humidity Units"] = "0-1"
+    # break for unhandled unit
+    elif humidity_unit != "0-1":
+        raise ValueError(f"Unexpected Relative Humidity Units: {humidity_unit}")
+
+    # TODO: add checks for temperature units
+
+    return df, info
 
 
 def calc_wet_bulb(row: dict) -> float:
@@ -49,14 +66,15 @@ def calc_enthalpy(row: dict) -> float:
     )
 
 
-def main():
-    # path to data file
+def main() -> None:
     path = os.path.join(
         os.path.dirname(__file__),
         "data",
         "nyc-tmy-2023.csv",
     )
-    df = read_file(path)
+
+    df, info = read_file(path)
+
     df = df.with_columns(
         pl.struct("Temperature", "Relative Humidity", "Pressure")
         .map_elements(calc_wet_bulb, return_dtype=pl.Float64)
@@ -69,9 +87,21 @@ def main():
         .alias("Enthalpy")
     )
 
-    # print(out.select(pl.all()).filter(pl.col("Wet Bulb") > 22))
-    # print(df.select(pl.col("Wet Bulb").quantile(0.99)))
     print(df)
+
+    # one percent wet bulb
+    one_pct_wb = df.select(pl.col("Wet Bulb").quantile(0.99)).item()
+
+    # mean coincident dry bulb
+    mc_db = (
+        df.filter(pl.col("Wet Bulb") >= one_pct_wb)
+        .select(pl.col("Temperature").mean())
+        .item()
+    )
+
+    temp_unit = info["Temperature Units"]
+    print(f"1% Wet Bulb [{temp_unit}]: {round(one_pct_wb, 1)}")
+    print(f"Mean Coincident Dry Bulb [{temp_unit}]: {round(mc_db, 1)}")
 
 
 # %%
