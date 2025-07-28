@@ -66,6 +66,14 @@ def calc_enthalpy(row: dict) -> float:
     )
 
 
+def calc_enthalpy_sat(row: dict) -> float:
+    # get enthalpy at 100% relative humidity
+    return psychrolib.GetMoistAirEnthalpy(
+        row["Temperature"],
+        psychrolib.GetHumRatioFromRelHum(row["Temperature"], 1.0, row["Pressure"]),
+    )
+
+
 def main() -> None:
     path = os.path.join(
         os.path.dirname(__file__),
@@ -85,6 +93,12 @@ def main() -> None:
         pl.struct("Temperature", "Relative Humidity", "Pressure")
         .map_elements(calc_enthalpy, return_dtype=pl.Float64)
         .alias("Enthalpy")
+    )
+
+    df = df.with_columns(
+        pl.struct("Temperature", "Relative Humidity", "Pressure")
+        .map_elements(calc_enthalpy_sat, return_dtype=pl.Float64)
+        .alias("Enthalpy_100RH")
     )
 
     print(df)
