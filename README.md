@@ -28,10 +28,6 @@ pip install pipx
 pipx install uv
 ```
 
-
-
-
-
 ## Install dependencies 
 ### With UV (Recommended)
 Install default project packages:
