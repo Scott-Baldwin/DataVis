@@ -1,300 +1,274 @@
-import os
-import json
 import polars as pl
+import json
+import os
 
-def create_3d_plot_html(csv_file_path, filename="3d_plot.html"):
+
+def create_3d_scatter_viewer(
+    df: pl.DataFrame, file_path: str = "3d_scatter_viewer.html"
+):
     """
-    Generates a self-contained HTML file for an interactive 3D scatter plot
-    from data in a CSV file using Polars.
+    Creates an interactive 3D scatter plot viewer as a single HTML file from a Polars DataFrame.
+
+    The viewer includes controls to dynamically assign columns to the X, Y, Z,
+    and color axes, as well as controls for opacity and colormap.
 
     Args:
-        csv_file_path (str): The path to the CSV file containing the data.
-        filename (str): The name of the HTML file to be created.
+        df (polars.DataFrame): The input Polars DataFrame.
+        file_path (str): The path and filename for the output HTML file.
     """
-    if not os.path.exists(csv_file_path):
-        print(f"Error: The file '{csv_file_path}' does not exist.")
-        return
+    if not isinstance(df, pl.DataFrame):
+        raise TypeError("Input must be a Polars DataFrame.")
 
-    try:
-        # Read the data from the CSV file using Polars, skipping the first 2 rows
-        df = pl.read_csv(csv_file_path, skip_rows=2)
+    # Get the column names from the DataFrame
+    columns = df.columns
 
-        # Check for required columns
-        required_cols = {'Wind Direction', 'Wind Speed', 'Temperature'}
-        if not required_cols.issubset(df.columns):
-            print(f"Error: The CSV file must contain 'Wind Direction', 'Wind Speed', and 'Temperature' columns. Found: {df.columns}")
-            return
+    # Convert the DataFrame to a list of dictionaries (JSON serializable format)
+    data = df.to_dicts()
 
-        # Convert Polars DataFrame to a list of dictionaries for JavaScript
-        data_dicts = df.select(['Wind Direction', 'Wind Speed', 'Temperature']).to_dicts()
+    # Find the first three numerical columns to use as default axes
+    numeric_cols = [col for col in columns if df[col].dtype.is_numeric()]
+    x_col = numeric_cols[0] if len(numeric_cols) > 0 else columns[0]
+    y_col = numeric_cols[1] if len(numeric_cols) > 1 else columns[0]
+    z_col = numeric_cols[2] if len(numeric_cols) > 2 else columns[0]
 
-        # Find min/max values for scaling and labeling
-        min_max_values = {
-            "Wind Direction": {"min": df['Wind Direction'].min(), "max": df['Wind Direction'].max()},
-            "Wind Speed": {"min": df['Wind Speed'].min(), "max": df['Wind Speed'].max()},
-            "Temperature": {"min": df['Temperature'].min(), "max": df['Temperature'].max()}
-        }
-        
-        # Combine data and ranges into a single JSON object
-        plot_data = {
-            "points": data_dicts,
-            "ranges": min_max_values
-        }
+    # List of available Plotly colormaps
+    colormaps = [
+        "Viridis",
+        "Plasma",
+        "Jet",
+        "Cividis",
+        "Greys",
+        "YlGnBu",
+        "RdBu",
+        "Portland",
+        "Blackbody",
+        "Earth",
+        "Electric",
+        "Hot",
+        "Greens",
+        "Reds",
+    ]
 
-        data_json = json.dumps(plot_data, indent=4)
-
-    except Exception as e:
-        print(f"An error occurred while reading the CSV file: {e}")
-        return
-
-    # HTML content as a multi-line string with embedded data
+    # Create the HTML content as a single string
     html_content = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wind Data 3D Plot</title>
+    <title>3D Scatter Plot Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body {{
-            margin: 0;
-            overflow: hidden;
-            font-family: sans-serif;
-            background-color: #f0f0f0;
-            color: #333;
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
         }}
-        canvas {{
-            display: block;
+        .rounded-xl {{ border-radius: 12px; }}
+        .slider {{
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #d1d5db;
+            outline: none;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+            border-radius: 4px;
         }}
-        .info {{
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(255, 255, 255, 0.7);
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-            font-size: 14px;
-        }}
-        .container {{
-            width: 100vw;
-            height: 100vh;
+        .slider::-webkit-slider-thumb {{
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #4f46e5;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }}
     </style>
 </head>
-<body>
-    <div class="info">
-        <h1>Wind Data 3D Plot</h1>
-        <p>X-axis: Wind Direction, Y-axis: Wind Speed, Z-axis: Temperature</p>
-        <p>Use your mouse to rotate and zoom. Point colors are based on temperature (blue = cold, red = hot).</p>
-    </div>
-    <div class="container" id="plot-container"></div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-
-    <script>
-        // Data loaded from the CSV file
-        const plotData = {data_json};
-        const data = plotData.points;
-        const ranges = plotData.ranges;
-        const AXIS_LENGTH = 30;
-        const AXIS_EXTENT = AXIS_LENGTH / 2;
-
-        // === Three.js Setup ===
-
-        // Scene, camera, and renderer
-        const container = document.getElementById('plot-container');
-        let scene, camera, renderer, controls;
-        let points = [];
-
-        function init() {{
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf0f0f0);
-
-            // Camera setup
-            camera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 1000);
-            camera.position.set(AXIS_EXTENT * 1.5, AXIS_EXTENT * 1.5, AXIS_EXTENT * 1.5);
-            camera.lookAt(0, 0, 0);
-
-            // Renderer setup
-            renderer = new THREE.WebGLRenderer({{ antialias: true }});
-            renderer.setSize(container.offsetWidth, container.offsetHeight);
-            container.appendChild(renderer.domElement);
-
-            // Controls
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; 
-            controls.dampingFactor = 0.05;
-            controls.screenSpacePanning = false;
-            controls.minDistance = 1;
-            controls.maxDistance = 200;
-
-            // Add light sources
-            const ambientLight = new THREE.AmbientLight(0x404040); 
-            scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            directionalLight.position.set(1, 1, 1);
-            scene.add(directionalLight);
-            
-            // Add a bounding box for a cleaner visual
-            const boundingBox = new THREE.Box3(
-                new THREE.Vector3(-AXIS_EXTENT, -AXIS_EXTENT, -AXIS_EXTENT),
-                new THREE.Vector3(AXIS_EXTENT, AXIS_EXTENT, AXIS_EXTENT)
-            );
-            const boxHelper = new THREE.Box3Helper(boundingBox, 0x888888);
-            scene.add(boxHelper);
-
-            // Create points from data
-            const geometry = new THREE.SphereGeometry(0.5, 32, 32);
-
-            // Find min/max temperature for color scaling
-            let minTemp = ranges['Temperature'].min;
-            let maxTemp = ranges['Temperature'].max;
-
-            // Define the color scale
-            const startColor = new THREE.Color(0x0000ff); // Blue for cold
-            const endColor = new THREE.Color(0xff0000); // Red for hot
-
-            data.forEach(pointData => {{
-                // Normalize temperature to a 0-1 range
-                const normalizedTemp = (pointData.Temperature - minTemp) / (maxTemp - minTemp);
-                // Interpolate color based on normalized temperature
-                const pointColor = startColor.clone().lerp(endColor, normalizedTemp);
-                
-                const material = new THREE.MeshBasicMaterial({{ color: pointColor }});
-                const sphere = new THREE.Mesh(geometry, material);
-
-                // Scale data to fit within the centered range
-                const x = THREE.MathUtils.mapLinear(pointData['Wind Direction'], ranges['Wind Direction'].min, ranges['Wind Direction'].max, -AXIS_EXTENT, AXIS_EXTENT);
-                const y = THREE.MathUtils.mapLinear(pointData['Wind Speed'], ranges['Wind Speed'].min, ranges['Wind Speed'].max, -AXIS_EXTENT, AXIS_EXTENT);
-                const z = THREE.MathUtils.mapLinear(pointData['Temperature'], ranges['Temperature'].min, ranges['Temperature'].max, -AXIS_EXTENT, AXIS_EXTENT);
-                
-                sphere.position.set(x, y, z);
-                points.push(sphere);
-                scene.add(sphere);
-            }});
-
-            // Add axes and labels
-            createAxesAndLabels();
-            
-            // Handle window resizing
-            window.addEventListener('resize', onWindowResize, false);
-        }}
+<body class="p-8 bg-gray-100 flex flex-col items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-7xl flex flex-col h-[calc(100vh-4rem)]">
+        <h1 class="text-3xl font-bold mb-6 text-center text-gray-800">3D Scatter Plot Viewer</h1>
         
-        function createTextCanvas(text) {{
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            const fontSize = 100;
-            context.font = `${{fontSize}}px Arial`;
-            const textMetrics = context.measureText(text);
-            const textWidth = textMetrics.width;
-            const textHeight = fontSize;
-            canvas.width = textWidth;
-            canvas.height = textHeight;
-            context.font = `${{fontSize}}px Arial`;
-            context.fillStyle = 'black';
-            context.fillText(text, 0, fontSize);
-            return canvas;
-        }}
+        <div class="flex flex-col md:flex-row items-center justify-center gap-4 mb-8">
+            <div class="w-full">
+                <label for="x-select" class="block text-sm font-medium text-gray-700">X-Axis</label>
+                <select id="x-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                </select>
+            </div>
+            <div class="w-full">
+                <label for="y-select" class="block text-sm font-medium text-gray-700">Y-Axis</label>
+                <select id="y-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                </select>
+            </div>
+            <div class="w-full">
+                <label for="z-select" class="block text-sm font-medium text-gray-700">Z-Axis</label>
+                <select id="z-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                </select>
+            </div>
+            <div class="w-full">
+                <label for="color-select" class="block text-sm font-medium text-gray-700">Color</label>
+                <select id="color-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                </select>
+            </div>
+            <div class="w-full">
+                <label for="colormap-select" class="block text-sm font-medium text-gray-700">Colormap</label>
+                <select id="colormap-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
+                </select>
+            </div>
+            <div class="w-full">
+                <label for="opacity-slider" class="block text-sm font-medium text-gray-700">Opacity</label>
+                <input type="range" id="opacity-slider" min="0" max="1" step="0.1" value="0.8" class="slider mt-1">
+            </div>
+        </div>
 
-        function createLabel(text, position) {{
-            const canvas = createTextCanvas(text);
-            const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.SpriteMaterial({{ map: texture }});
-            const sprite = new THREE.Sprite(material);
-            sprite.scale.set(canvas.width / 50, canvas.height / 50, 1);
-            sprite.position.copy(position);
-            scene.add(sprite);
-            return sprite;
-        }}
+        <div id="plot" class="w-full flex-grow bg-gray-200 rounded-xl shadow-inner"></div>
 
-        function createAxesAndLabels() {{
-            const tickCount = 5;
-            const xStep = (ranges['Wind Direction'].max - ranges['Wind Direction'].min) / (tickCount - 1);
-            const yStep = (ranges['Wind Speed'].max - ranges['Wind Speed'].min) / (tickCount - 1);
-            const zStep = (ranges['Temperature'].max - ranges['Temperature'].min) / (tickCount - 1);
-            
-            // Draw axis lines and labels on the plot boundary
-            
-            // X-Axis (Wind Direction)
-            const xMaterial = new THREE.LineBasicMaterial({{ color: 0xff0000 }});
-            const xGeometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(-AXIS_EXTENT, -AXIS_EXTENT, -AXIS_EXTENT), 
-                new THREE.Vector3(AXIS_EXTENT, -AXIS_EXTENT, -AXIS_EXTENT)
-            ]);
-            const xAxis = new THREE.Line(xGeometry, xMaterial);
-            scene.add(xAxis);
-            createLabel("Wind Direction", new THREE.Vector3(AXIS_EXTENT + 5, -AXIS_EXTENT, -AXIS_EXTENT));
+        <script>
+            // Data and column names are passed from the Python script
+            const data = {json.dumps(data)};
+            const columns = {json.dumps(columns)};
+            const colormaps = {json.dumps(colormaps)};
+            const initialXCol = "{x_col}";
+            const initialYCol = "{y_col}";
+            const initialZCol = "{z_col}";
+            const initialColorCol = "{columns[3]}";
 
-            // Y-Axis (Wind Speed)
-            const yMaterial = new THREE.LineBasicMaterial({{ color: 0x00ff00 }});
-            const yGeometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(-AXIS_EXTENT, -AXIS_EXTENT, -AXIS_EXTENT), 
-                new THREE.Vector3(-AXIS_EXTENT, AXIS_EXTENT, -AXIS_EXTENT)
-            ]);
-            const yAxis = new THREE.Line(yGeometry, yMaterial);
-            scene.add(yAxis);
-            createLabel("Wind Speed", new THREE.Vector3(-AXIS_EXTENT, AXIS_EXTENT + 5, -AXIS_EXTENT));
+            const plotDiv = document.getElementById('plot');
+            const xSelect = document.getElementById('x-select');
+            const ySelect = document.getElementById('y-select');
+            const zSelect = document.getElementById('z-select');
+            const colorSelect = document.getElementById('color-select');
+            const colormapSelect = document.getElementById('colormap-select');
+            const opacitySlider = document.getElementById('opacity-slider');
 
-            // Z-Axis (Temperature)
-            const zMaterial = new THREE.LineBasicMaterial({{ color: 0x0000ff }});
-            const zGeometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(-AXIS_EXTENT, -AXIS_EXTENT, -AXIS_EXTENT), 
-                new THREE.Vector3(-AXIS_EXTENT, -AXIS_EXTENT, AXIS_EXTENT)
-            ]);
-            const zAxis = new THREE.Line(zGeometry, zMaterial);
-            scene.add(zAxis);
-            createLabel("Temperature", new THREE.Vector3(-AXIS_EXTENT, -AXIS_EXTENT, AXIS_EXTENT + 5));
+            // Function to populate the dropdown menus
+            function populateSelects() {{
+                const axisSelects = [xSelect, ySelect, zSelect, colorSelect];
+                axisSelects.forEach(select => {{
+                    columns.forEach(col => {{
+                        const option = document.createElement('option');
+                        option.value = col;
+                        option.textContent = col;
+                        select.appendChild(option);
+                    }});
+                }});
 
-            // Add tick marks and values
-            for (let i = 0; i < tickCount; i++) {{
-                // X-axis ticks
-                const xVal = ranges['Wind Direction'].min + i * xStep;
-                const xPos = THREE.MathUtils.mapLinear(xVal, ranges['Wind Direction'].min, ranges['Wind Direction'].max, -AXIS_EXTENT, AXIS_EXTENT);
-                createLabel(xVal.toFixed(0), new THREE.Vector3(xPos, -AXIS_EXTENT - 2, -AXIS_EXTENT));
+                colormaps.forEach(map => {{
+                    const option = document.createElement('option');
+                    option.value = map;
+                    option.textContent = map;
+                    colormapSelect.appendChild(option);
+                }});
 
-                // Y-axis ticks
-                const yVal = ranges['Wind Speed'].min + i * yStep;
-                const yPos = THREE.MathUtils.mapLinear(yVal, ranges['Wind Speed'].min, ranges['Wind Speed'].max, -AXIS_EXTENT, AXIS_EXTENT);
-                createLabel(yVal.toFixed(1), new THREE.Vector3(-AXIS_EXTENT - 2, yPos, -AXIS_EXTENT));
-
-                // Z-axis ticks
-                const zVal = ranges['Temperature'].min + i * zStep;
-                const zPos = THREE.MathUtils.mapLinear(zVal, ranges['Temperature'].min, ranges['Temperature'].max, -AXIS_EXTENT, AXIS_EXTENT);
-                createLabel(zVal.toFixed(1), new THREE.Vector3(-AXIS_EXTENT - 2, -AXIS_EXTENT, zPos));
+                xSelect.value = initialXCol;
+                ySelect.value = initialYCol;
+                zSelect.value = initialZCol;
+                colorSelect.value = initialColorCol;
+                colormapSelect.value = "Viridis";
             }}
-        }}
 
-        function onWindowResize() {{
-            camera.aspect = container.offsetWidth / container.offsetHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(container.offsetWidth, container.offsetHeight);
-        }}
+            // Function to get values for a specific column
+            function getValues(column) {{
+                return data.map(row => row[column]);
+            }}
 
-        // Animation loop
-        function animate() {{
-            requestAnimationFrame(animate);
-            controls.update(); 
-            renderer.render(scene, camera);
-        }}
+            // Function to create and update the plot
+            function updatePlot() {{
+                const xCol = xSelect.value;
+                const yCol = ySelect.value;
+                const zCol = zSelect.value;
+                const colorCol = colorSelect.value;
+                const colormap = colormapSelect.value;
+                const opacity = parseFloat(opacitySlider.value);
 
-        // Initialize and start the animation loop
-        init();
-        animate();
-    </script>
+                // Create the trace for the scatter plot
+                const trace = {{
+                    x: getValues(xCol),
+                    y: getValues(yCol),
+                    z: getValues(zCol),
+                    mode: 'markers',
+                    type: 'scatter3d',
+                    marker: {{
+                        size: 5,
+                        color: getValues(colorCol),
+                        colorscale: colormap,
+                        colorbar: {{ 
+                            title: colorCol,
+                            x: 0.0,
+                        }},
+                        line: {{
+                            width: 0
+                        }},
+                        opacity: opacity
+                    }},
+                    hoverinfo: 'text',
+                    text: data.map(row => `<b>${{xCol}}</b>: ${{row[xCol]}}<br><b>${{yCol}}</b>: ${{row[yCol]}}<br><b>${{zCol}}</b>: ${{row[zCol]}}<br><b>${{colorCol}}</b>: ${{row[colorCol]}}`)
+                }};
+
+                const layout = {{
+                    scene: {{
+                        xaxis: {{ title: xCol }},
+                        yaxis: {{ title: yCol }},
+                        zaxis: {{ title: zCol }}
+                    }},
+                    margin: {{ l: 0, r: 0, b: 0, t: 0 }},
+                    height: plotDiv.offsetHeight, // Set height to container's height
+                    width: plotDiv.offsetWidth, // Set width to container's width
+                    hovermode: 'closest'
+                }};
+
+                Plotly.react(plotDiv, [trace], layout);
+            }}
+
+            // Initialize the viewer
+            populateSelects();
+            updatePlot();
+
+            // Add event listeners to the dropdowns and slider to update the plot
+            xSelect.addEventListener('change', updatePlot);
+            ySelect.addEventListener('change', updatePlot);
+            zSelect.addEventListener('change', updatePlot);
+            colorSelect.addEventListener('change', updatePlot);
+            colormapSelect.addEventListener('change', updatePlot);
+            opacitySlider.addEventListener('input', updatePlot);
+            
+            // Add a resize event listener for the plot
+            window.addEventListener('resize', () => {{
+                Plotly.relayout(plotDiv, {{
+                    height: plotDiv.offsetHeight,
+                    width: plotDiv.offsetWidth,
+                }});
+            }});
+        </script>
+    </div>
 </body>
 </html>
-"""
+    """
 
-    # Write the content to the specified file
-    with open(filename, "w") as f:
-        f.write(html_content)
+    # Write the HTML content to the specified file
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(
+            f"Successfully created 3D scatter plot viewer at: {os.path.abspath(file_path)}"
+        )
+    except IOError as e:
+        print(f"Error writing file: {e}")
 
-    print(f"Successfully generated HTML file: {filename}")
-    print(f"You can open it in your browser to view the interactive 3D plot.")
 
-# Run the function to create the HTML file when the script is executed
-if __name__ == "__main__":
-    csv_file_path = "./src/data/nyc-tmy-2023.csv"
-    create_3d_plot_html(csv_file_path)
+# Example usage (uncomment to run)
+# if __name__ == "__main__":
+#     # Create a sample Polars DataFrame
+#     sample_df = pl.DataFrame({
+#         "sepal_length": [5.1, 4.9, 4.7, 4.6, 5.0, 5.4],
+#         "sepal_width": [3.5, 3.0, 3.2, 3.1, 3.6, 3.9],
+#         "petal_length": [1.4, 1.4, 1.3, 1.5, 1.4, 1.7],
+#         "petal_width": [0.2, 0.2, 0.2, 0.2, 0.2, 0.4],
+#         "species": ["setosa", "setosa", "setosa", "setosa", "setosa", "setosa"]
+#     })
+
+#     # Generate the HTML file
+#     create_3d_scatter_viewer(sample_df)

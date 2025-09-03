@@ -13,6 +13,9 @@ import os
 import polars as pl
 import psychrolib
 
+# custom
+from html_viewer import create_3d_scatter_viewer
+
 # set unit system
 psychrolib.SetUnitSystem(psychrolib.SI)
 
@@ -116,6 +119,19 @@ def main() -> None:
     temp_unit = info["Temperature Units"]
     print(f"1% Wet Bulb [{temp_unit}]: {round(one_pct_wb, 1)}")
     print(f"Mean Coincident Dry Bulb [{temp_unit}]: {round(mc_db, 1)}")
+
+    # export to 3d viewer
+    # pull these columns to the front to use for default setup
+    first_columns = ["Temperature", "Wind Direction", "Wind Speed", "Month"]
+    all_columns = df.columns
+    other_columns = [col for col in all_columns if col not in first_columns]
+
+    # Create the new column order
+    new_column_order = first_columns + other_columns
+
+    # Apply select to reorder the DataFrame
+    # df_reordered = df.select(new_column_order)
+    create_3d_scatter_viewer(df.select(new_column_order))
 
 
 # %%
