@@ -131,7 +131,8 @@ def main() -> None:
 
     # Apply select to reorder the DataFrame
     # df_reordered = df.select(new_column_order)
-    create_3d_scatter_viewer(df.select(new_column_order))
+    file_path = os.path.join(os.path.dirname(__file__), "3d_plot.html")
+    create_3d_scatter_viewer(df.select(new_column_order), file_path)
 
 
 # %%

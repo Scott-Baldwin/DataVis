@@ -257,18 +257,3 @@ def create_3d_scatter_viewer(
         )
     except IOError as e:
         print(f"Error writing file: {e}")
-
-
-# Example usage (uncomment to run)
-# if __name__ == "__main__":
-#     # Create a sample Polars DataFrame
-#     sample_df = pl.DataFrame({
-#         "sepal_length": [5.1, 4.9, 4.7, 4.6, 5.0, 5.4],
-#         "sepal_width": [3.5, 3.0, 3.2, 3.1, 3.6, 3.9],
-#         "petal_length": [1.4, 1.4, 1.3, 1.5, 1.4, 1.7],
-#         "petal_width": [0.2, 0.2, 0.2, 0.2, 0.2, 0.4],
-#         "species": ["setosa", "setosa", "setosa", "setosa", "setosa", "setosa"]
-#     })
-
-#     # Generate the HTML file
-#     create_3d_scatter_viewer(sample_df)
