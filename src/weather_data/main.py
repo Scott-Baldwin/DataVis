@@ -7,7 +7,8 @@
 # ///
 
 # standard lib
-import os
+# import os
+from pathlib import Path
 
 # 3rd party lib
 import polars as pl
@@ -20,7 +21,7 @@ from html_viewer import create_3d_scatter_viewer
 psychrolib.SetUnitSystem(psychrolib.SI)
 
 
-def read_file(path: str) -> tuple[pl.DataFrame, dict]:
+def read_file(path: str | Path) -> tuple[pl.DataFrame, dict]:
     # get info from top 2 rows of headers
     info = pl.read_csv(path, n_rows=2).to_dicts()[0]
     # get data
@@ -78,13 +79,10 @@ def calc_enthalpy_sat(row: dict) -> float:
 
 
 def main() -> None:
-    path = os.path.join(
-        os.path.dirname(__file__),
-        "data",
-        "nyc-tmy-2023.csv",
-    )
+    parent_path = Path(__file__).parent
+    data_path = parent_path / "data" / "nyc-tmy-2023.csv"
 
-    df, info = read_file(path)
+    df, info = read_file(data_path)
 
     df = df.with_columns(
         pl.struct("Temperature", "Relative Humidity", "Pressure")
@@ -120,18 +118,18 @@ def main() -> None:
     print(f"1% Wet Bulb [{temp_unit}]: {round(one_pct_wb, 1)}")
     print(f"Mean Coincident Dry Bulb [{temp_unit}]: {round(mc_db, 1)}")
 
-    # export to 3d viewer
-    # pull these columns to the front to use for default setup
-    first_columns = ["Temperature", "Wind Direction", "Wind Speed", "Month"]
-    all_columns = df.columns
-    other_columns = [col for col in all_columns if col not in first_columns]
-
-    # Create the new column order
-    new_column_order = first_columns + other_columns
-
-    # Apply select to reorder the DataFrame
-    # df_reordered = df.select(new_column_order)
-    create_3d_scatter_viewer(df.select(new_column_order))
+    # # export to 3d viewer
+    # # pull these columns to the front to use for default setup
+    # first_columns = ["Temperature", "Wind Direction", "Wind Speed", "Month"]
+    # all_columns = df.columns
+    # other_columns = [col for col in all_columns if col not in first_columns]
+    #
+    # # Create the new column order
+    # new_column_order = first_columns + other_columns
+    #
+    # # Apply select to reorder the DataFrame
+    # out_path = parent_path / "3d_plot.html"
+    # create_3d_scatter_viewer(df.select(new_column_order), out_path)
 
 
 # %%
