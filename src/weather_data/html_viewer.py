@@ -1,10 +1,12 @@
+from pathlib import Path
+
 import polars as pl
 import json
 import os
 
 
 def create_3d_scatter_viewer(
-    df: pl.DataFrame, file_path: str = "3d_scatter_viewer.html"
+    df: pl.DataFrame, file_path: str | Path = "3d_scatter_viewer.html"
 ):
     """
     Creates an interactive 3D scatter plot viewer as a single HTML file from a Polars DataFrame.

@@ -3,7 +3,9 @@ Data visualization practice using the latest new tools.
 
 # Setup
 ### Install UV Package Manager
-This project uses [UV](https://github.com/astral-sh/uv) as a package manager. Check out the UV [docs](https://docs.astral.sh/uv/) and [GitHub](https://github.com/astral-sh/uv) for more info. **There are 2 easy ways to install uv from a terminal:**
+This project uses [UV](https://github.com/astral-sh/uv) as a package manager. 
+Check out the UV [docs](https://docs.astral.sh/uv/) and [GitHub](https://github.com/astral-sh/uv) for more info. 
+**There are 2 easy ways to install uv from a terminal:**
 
 #### Standalone UV Installer from Astral (Recommended):
 On Windows:
